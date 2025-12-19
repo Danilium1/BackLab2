@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from fastapi_filter import FilterDepends, with_prefix
 from fastapi_filter.contrib.sqlalchemy import Filter
-from fastapi_pagination import Page, add_pagination
+from fastapi_pagination import Page, add_pagination, Params
 from fastapi_pagination.ext.sqlalchemy import paginate as apaginate
 
 router = APIRouter(
@@ -108,12 +108,13 @@ def format_recipe_response(recipe: Recipe) -> dict:
         ]
     }
 
-@router.get("", response_model=Page[RecipesRead], summary="читаем все рецепты")
+@router.get("", summary="читаем все рецепты")
 async def index(
     session: Annotated[
         AsyncSession,
         Depends(db_helper.session_getter),
     ],
+    params: Params = Depends(),
     name__like: Optional[str] = Query(None, description="Search recipes by name (partial match)"),
     ingredient_id: Optional[str] = Query(None, description="Filter by ingredient IDs (comma-separated)"),
     sort: str = Query("-id", description="Sort by field (e.g., 'id', '-id', 'difficulty', '-difficulty')"),
@@ -158,19 +159,19 @@ async def index(
                 stmt = stmt.order_by(Recipe.difficulty.asc())
     
     # Use pagination
-    page = await apaginate(session, stmt)
+    page = await apaginate(session, stmt, params=params)
     
     # Transform the page items to use format_recipe_response
     formatted_items = [format_recipe_response(recipe) for recipe in page.items]
     
-    # Return a new Page with formatted items
-    return Page(
-        items=formatted_items,
-        total=page.total,
-        page=page.page,
-        size=page.size,
-        pages=page.pages
-    )
+    # Return a dict with pagination info
+    return {
+        'items': formatted_items,
+        'total': page.total,
+        'page': page.page,
+        'size': page.size,
+        'pages': page.pages
+    }
 
 
 @router.post("", response_model=RecipesRead, status_code=status.HTTP_201_CREATED, summary="делаем один рецепт")

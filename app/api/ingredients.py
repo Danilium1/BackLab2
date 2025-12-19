@@ -149,7 +149,7 @@ async def get_recipes_by_ingredient(
     ],
     id: int,
     include: Optional[str] = Query(None, description="Include related data (comma-separated: cuisine, ingredients, allergens)"),
-    select: Optional[str] = Query(None, description="Select specific fields (comma-separated: id, name, difficulty, description, cooking_time)"),
+    select_fields: Optional[str] = Query(None, alias="select", description="Select specific fields (comma-separated: id, name, difficulty, description, cooking_time)"),
 ):
     # Проверяем существование ингредиента
     ingredient = await session.get(Ingredient, id)
@@ -192,8 +192,8 @@ async def get_recipes_by_ingredient(
     
     # Parse select parameter
     selected_fields = None
-    if select:
-        selected_fields = set(field.strip() for field in select.split(',') if field.strip())
+    if select_fields:
+        selected_fields = set(field.strip() for field in select_fields.split(',') if field.strip())
         # Validate that selected fields are valid
         valid_fields = {'id', 'name', 'difficulty', 'description', 'cooking_time'}
         invalid_fields = selected_fields - valid_fields
