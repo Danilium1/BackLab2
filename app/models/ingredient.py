@@ -11,11 +11,7 @@ class Ingredient(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
 
-    # Связь с рецептами через промежуточную таблицу
     recipe_ingredients: Mapped[list["RecipeIngredient"]] = relationship(back_populates="ingredient")
 
     def __repr__(self):
         return f"Ingredient(id={self.id}, name={self.name})"
-
-
-#deep file all

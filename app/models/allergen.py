@@ -17,5 +17,3 @@ class Allergen(Base):
     def __repr__(self):
         return f"Allergen(id={self.id}, name={self.name})"
     
-    
-#deep file all

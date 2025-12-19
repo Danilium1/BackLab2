@@ -18,4 +18,3 @@ class Cuisine(Base):
         return f"Cuisine(id={self.id}, name={self.name})"
     
 
-#deep file all

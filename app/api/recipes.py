@@ -116,7 +116,7 @@ async def index(
     return [format_recipe_response(recipe) for recipe in recipes]
 
 
-@router.post("", response_model=RecipesRead, status_code=status.HTTP_201_CREATED, summary="делаем один рецептик")
+@router.post("", response_model=RecipesRead, status_code=status.HTTP_201_CREATED, summary="делаем один рецепт")
 async def store(
     session: Annotated[
         AsyncSession,
@@ -237,8 +237,7 @@ async def show(
     
     return format_recipe_response(recipe)
 
-
-@router.put("/{id}", response_model=RecipesRead, summary="обнова")
+@router.put("/{id}", response_model=RecipesRead, summary="обновить один рецепт")
 async def update(
     session: Annotated[
         AsyncSession,
@@ -247,16 +246,110 @@ async def update(
     id: int,
     recipe_update: RecipesCreate,
 ):
+    # 1. Проверяем существование рецепта
     recipe = await session.get(Recipe, id)
+    if not recipe:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id {id} not found"
+        )
+    
+    # 2. Проверяем существование кухни (если указана)
+    if recipe_update.cuisine_id:
+        cuisine = await session.get(Cuisine, recipe_update.cuisine_id)
+        if not cuisine:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cuisine with id {recipe_update.cuisine_id} not found"
+            )
+
+    # 3. Проверяем существование аллергенов
+    if recipe_update.allergen_ids:
+        stmt = select(Allergen).where(Allergen.id.in_(recipe_update.allergen_ids))
+        allergens = await session.scalars(stmt)
+        existing_allergens = allergens.all()
+        
+        if len(existing_allergens) != len(recipe_update.allergen_ids):
+            existing_ids = {a.id for a in existing_allergens}
+            missing_ids = set(recipe_update.allergen_ids) - existing_ids
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Allergens with ids {missing_ids} not found"
+            )
+
+    # 4. Проверяем существование ингредиентов
+    ingredient_ids = [ing.ingredient_id for ing in recipe_update.ingredients]
+    stmt = select(Ingredient).where(Ingredient.id.in_(ingredient_ids))
+    ingredients = await session.scalars(stmt)
+    existing_ingredients = ingredients.all()
+    
+    if len(existing_ingredients) != len(ingredient_ids):
+        existing_ing_ids = {i.id for i in existing_ingredients}
+        missing_ing_ids = set(ingredient_ids) - existing_ing_ids
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ingredients with ids {missing_ing_ids} not found"
+        )
+    
+    # 5. Обновляем основные поля рецепта
     recipe.title = recipe_update.title
     recipe.description = recipe_update.description
     recipe.cooking_time = recipe_update.cooking_time
     recipe.difficulty = recipe_update.difficulty
+    recipe.cuisine_id = recipe_update.cuisine_id
+    
+    # 6. Удаляем старые связи с аллергенами
+    stmt = select(RecipeAllergen).where(RecipeAllergen.recipe_id == id)
+    result = await session.execute(stmt)
+    old_recipe_allergens = result.scalars().all()
+    for ra in old_recipe_allergens:
+        await session.delete(ra)
+    
+    # 7. Добавляем новые связи с аллергенами
+    for allergen_id in recipe_update.allergen_ids:
+        recipe_allergen = RecipeAllergen(
+            recipe_id=recipe.id,
+            allergen_id=allergen_id
+        )
+        session.add(recipe_allergen)
+    
+    # 8. Удаляем старые ингредиенты
+    stmt = select(RecipeIngredient).where(RecipeIngredient.recipe_id == id)
+    result = await session.execute(stmt)
+    old_recipe_ingredients = result.scalars().all()
+    for ri in old_recipe_ingredients:
+        await session.delete(ri)
+    
+    # 9. Добавляем новые ингредиенты
+    for ingredient_data in recipe_update.ingredients:
+        recipe_ingredient = RecipeIngredient(
+            recipe_id=recipe.id,
+            ingredient_id=ingredient_data.ingredient_id,
+            quantity=ingredient_data.quantity,
+            measurement=ingredient_data.measurement
+        )
+        session.add(recipe_ingredient)
+    
+    # 10. Сохраняем изменения
     await session.commit()
-    return recipe
+    
+    # 11. Загружаем обновленный рецепт со всеми связями
+    stmt = (
+        select(Recipe)
+        .where(Recipe.id == id)
+        .options(
+            selectinload(Recipe.cuisine),
+            selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
+        )
+    )
+    result = await session.execute(stmt)
+    recipe_with_relations = result.scalar_one()
+    
+    return format_recipe_response(recipe_with_relations)
 
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, summary="удаление")
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, summary="удаление рецепта")
 async def destroy(
     session: Annotated[
         AsyncSession,
@@ -264,11 +357,66 @@ async def destroy(
     ],
     id: int,
 ):
+    # 1. Проверяем существование рецепта
     recipe = await session.get(Recipe, id)
     if not recipe:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Recipe with id {id} not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id {id} not found"
         )
-
+    
+    # 2. Удаляем связи с аллергенами
+    stmt = select(RecipeAllergen).where(RecipeAllergen.recipe_id == id)
+    result = await session.execute(stmt)
+    recipe_allergens = result.scalars().all()
+    for ra in recipe_allergens:
+        await session.delete(ra)
+    
+    # 3. Удаляем связи с ингредиентами
+    stmt = select(RecipeIngredient).where(RecipeIngredient.recipe_id == id)
+    result = await session.execute(stmt)
+    recipe_ingredients = result.scalars().all()
+    for ri in recipe_ingredients:
+        await session.delete(ri)
+    
+    # 4. Удаляем сам рецепт
     await session.delete(recipe)
+    
+    # 5. Сохраняем изменения
     await session.commit()
+
+
+# @router.put("/{id}", response_model=RecipesRead, summary="обновить один рецепт")
+# async def update(
+#     session: Annotated[
+#         AsyncSession,
+#         Depends(db_helper.session_getter),
+#     ],
+#     id: int,
+#     recipe_update: RecipesCreate,
+# ):
+#     recipe = await session.get(Recipe, id)
+#     recipe.title = recipe_update.title
+#     recipe.description = recipe_update.description
+#     recipe.cooking_time = recipe_update.cooking_time
+#     recipe.difficulty = recipe_update.difficulty
+#     await session.commit()
+#     return recipe
+
+
+# @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, summary="удаление рецепта")
+# async def destroy(
+#     session: Annotated[
+#         AsyncSession,
+#         Depends(db_helper.session_getter),
+#     ],
+#     id: int,
+# ):
+#     recipe = await session.get(Recipe, id)
+#     if not recipe:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail=f"Recipe with id {id} not found"
+#         )
+
+#     await session.delete(recipe)
+#     await session.commit()
