@@ -8,10 +8,7 @@ from sqlalchemy.orm import selectinload
 from config import settings
 
 # Import the format function from recipes to avoid duplication
-import sys
-import os
-sys.path.insert(0, os.path.dirname(__file__))
-from recipes import format_recipe_response
+from .recipes import format_recipe_response
 
 router = APIRouter(
     tags=["ingredients"],

@@ -267,7 +267,7 @@ async def destroy(
     recipe = await session.get(Recipe, id)
     if not recipe:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with id {id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Recipe with id {id} not found"
         )
 
     await session.delete(recipe)
