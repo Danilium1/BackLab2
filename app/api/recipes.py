@@ -65,7 +65,34 @@ class RecipesRead(BaseModel):
     class Config:
         from_attributes = True
 
-# Старые эндпоинты пока остаются (мы их обновим дальше)
+# Helper function to format recipe with relations
+def format_recipe_response(recipe: Recipe) -> dict:
+    """Format recipe with all relations into the required response format"""
+    return {
+        "id": recipe.id,
+        "title": recipe.title,
+        "description": recipe.description,
+        "cooking_time": recipe.cooking_time,
+        "difficulty": recipe.difficulty,
+        "cuisine": {
+            "id": recipe.cuisine.id,
+            "name": recipe.cuisine.name
+        } if recipe.cuisine else None,
+        "allergens": [
+            {"id": ra.allergen.id, "name": ra.allergen.name}
+            for ra in recipe.recipe_allergens
+        ],
+        "ingredients": [
+            {
+                "id": ri.ingredient.id,
+                "name": ri.ingredient.name,
+                "quantity": ri.quantity,
+                "measurement": ri.measurement
+            }
+            for ri in recipe.recipe_ingredients
+        ]
+    }
+
 @router.get("", response_model=list[RecipesRead], summary="читаем все рецепты")
 async def index(
     session: Annotated[
@@ -73,9 +100,20 @@ async def index(
         Depends(db_helper.session_getter),
     ],
 ):
-    stmt = select(Recipe).order_by(Recipe.id)
-    recepes = await session.scalars(stmt)
-    return recepes.all()
+    stmt = (
+        select(Recipe)
+        .options(
+            selectinload(Recipe.cuisine),
+            selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
+        )
+        .order_by(Recipe.id)
+    )
+    result = await session.execute(stmt)
+    recipes = result.scalars().all()
+    
+    # Format each recipe with relations
+    return [format_recipe_response(recipe) for recipe in recipes]
 
 
 @router.post("", response_model=RecipesRead, status_code=status.HTTP_201_CREATED, summary="делаем один рецептик")
@@ -154,20 +192,21 @@ async def store(
 
     # 7. Сохраняем все изменения
     await session.commit()
-    await session.refresh(recipe)
 
-    # 8. Загружаем связанные данные для ответа
-    recipe_with_relations = await session.get(
-        Recipe, 
-        recipe.id,
-        options=[
+    # 8. Загружаем связанные данные для ответа (нужна новая транзакция)
+    stmt = (
+        select(Recipe)
+        .where(Recipe.id == recipe.id)
+        .options(
             selectinload(Recipe.cuisine),
             selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
             selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
-        ]
+        )
     )
+    result = await session.execute(stmt)
+    recipe_with_relations = result.scalar_one()
 
-    return recipe_with_relations
+    return format_recipe_response(recipe_with_relations)
 
 
 @router.get("/{id}", response_model=RecipesRead, summary="читаем один рецепт")
@@ -178,8 +217,25 @@ async def show(
     ],
     id: int,
 ):
-    recipe = await session.get(Recipe, id)
-    return recipe
+    stmt = (
+        select(Recipe)
+        .where(Recipe.id == id)
+        .options(
+            selectinload(Recipe.cuisine),
+            selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
+        )
+    )
+    result = await session.execute(stmt)
+    recipe = result.scalar_one_or_none()
+    
+    if not recipe:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id {id} not found"
+        )
+    
+    return format_recipe_response(recipe)
 
 
 @router.put("/{id}", response_model=RecipesRead, summary="обнова")

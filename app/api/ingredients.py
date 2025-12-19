@@ -1,9 +1,10 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, status, HTTPException
-from models import db_helper, Ingredient
+from models import db_helper, Ingredient, Recipe, RecipeIngredient, RecipeAllergen
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from config import settings
 
 router = APIRouter(
@@ -134,3 +135,112 @@ async def delete_ingredient(
     
     await session.delete(ingredient)
     await session.commit()
+
+
+# Схемы для рецептов
+class CuisineInfo(BaseModel):
+    id: int
+    name: str
+    
+    class Config:
+        from_attributes = True
+
+class AllergenInfo(BaseModel):
+    id: int
+    name: str
+    
+    class Config:
+        from_attributes = True
+
+class IngredientInRecipe(BaseModel):
+    id: int
+    name: str
+    quantity: int
+    measurement: int
+    
+    class Config:
+        from_attributes = True
+
+class RecipeWithDetails(BaseModel):
+    id: int
+    title: str
+    description: str
+    cooking_time: int
+    difficulty: int
+    cuisine: CuisineInfo | None
+    allergens: list[AllergenInfo]
+    ingredients: list[IngredientInRecipe]
+    
+    class Config:
+        from_attributes = True
+
+
+# GET /ingredients/{id}/recipes - получить все рецепты с данным ингредиентом
+@router.get("/{id}/recipes", response_model=list[RecipeWithDetails], summary="Получить все рецепты с данным ингредиентом")
+async def get_recipes_by_ingredient(
+    session: Annotated[
+        AsyncSession,
+        Depends(db_helper.session_getter),
+    ],
+    id: int,
+):
+    # Проверяем существование ингредиента
+    ingredient = await session.get(Ingredient, id)
+    if not ingredient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ingredient with id {id} not found"
+        )
+    
+    # Получаем все recipe_id, где используется этот ингредиент
+    stmt = select(RecipeIngredient.recipe_id).where(RecipeIngredient.ingredient_id == id)
+    result = await session.execute(stmt)
+    recipe_ids = result.scalars().all()
+    
+    if not recipe_ids:
+        return []
+    
+    # Загружаем рецепты со всеми связями
+    stmt = (
+        select(Recipe)
+        .where(Recipe.id.in_(recipe_ids))
+        .options(
+            selectinload(Recipe.cuisine),
+            selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
+        )
+        .order_by(Recipe.id)
+    )
+    result = await session.execute(stmt)
+    recipes = result.scalars().all()
+    
+    # Форматируем ответ
+    formatted_recipes = []
+    for recipe in recipes:
+        formatted_recipe = {
+            "id": recipe.id,
+            "title": recipe.title,
+            "description": recipe.description,
+            "cooking_time": recipe.cooking_time,
+            "difficulty": recipe.difficulty,
+            "cuisine": {
+                "id": recipe.cuisine.id,
+                "name": recipe.cuisine.name
+            } if recipe.cuisine else None,
+            "allergens": [
+                {"id": ra.allergen.id, "name": ra.allergen.name}
+                for ra in recipe.recipe_allergens
+            ],
+            "ingredients": [
+                {
+                    "id": ri.ingredient.id,
+                    "name": ri.ingredient.name,
+                    "quantity": ri.quantity,
+                    "measurement": ri.measurement
+                }
+                for ri in recipe.recipe_ingredients
+            ]
+        }
+        formatted_recipes.append(formatted_recipe)
+    
+    return formatted_recipes
