@@ -1,5 +1,5 @@
-from typing import Annotated
-from fastapi import APIRouter, Depends, status, HTTPException
+from typing import Annotated, Optional
+from fastapi import APIRouter, Depends, status, HTTPException, Query
 from models import db_helper, Recipe, Cuisine, Allergen, Ingredient, RecipeAllergen, RecipeIngredient, MeasurementEnum
 from pydantic import BaseModel, Field
 from config import settings
@@ -7,11 +7,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from sqlalchemy.orm import selectinload
+from fastapi_filter import FilterDepends, with_prefix
+from fastapi_filter.contrib.sqlalchemy import Filter
+from fastapi_pagination import Page, add_pagination
+from fastapi_pagination.ext.sqlalchemy import paginate as apaginate
 
 router = APIRouter(
     tags=["recipes"],
     prefix=settings.url.recipes,
 )
+
+# Filter class for Recipe
+class RecipeFilter(Filter):
+    name__like: Optional[str] = None
+    ingredient_id: Optional[str] = None  # Comma-separated list of ingredient IDs
+    order_by: list[str] = ["-id"]  # Default sorting by id descending
+
+    class Constants(Filter.Constants):
+        model = Recipe
+        search_field_name = "name"
+        search_model_fields = ["title"]
 
 # Схемы для создания
 class RecipeIngredientCreate(BaseModel):
@@ -93,13 +108,17 @@ def format_recipe_response(recipe: Recipe) -> dict:
         ]
     }
 
-@router.get("", response_model=list[RecipesRead], summary="читаем все рецепты")
+@router.get("", response_model=Page[RecipesRead], summary="читаем все рецепты")
 async def index(
     session: Annotated[
         AsyncSession,
         Depends(db_helper.session_getter),
     ],
+    name__like: Optional[str] = Query(None, description="Search recipes by name (partial match)"),
+    ingredient_id: Optional[str] = Query(None, description="Filter by ingredient IDs (comma-separated)"),
+    sort: str = Query("-id", description="Sort by field (e.g., 'id', '-id', 'difficulty', '-difficulty')"),
 ):
+    # Build base query with eager loading of relationships
     stmt = (
         select(Recipe)
         .options(
@@ -107,13 +126,51 @@ async def index(
             selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
             selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
         )
-        .order_by(Recipe.id)
     )
-    result = await session.execute(stmt)
-    recipes = result.scalars().all()
     
-    # Format each recipe with relations
-    return [format_recipe_response(recipe) for recipe in recipes]
+    # Apply name filter (case-insensitive partial match)
+    if name__like:
+        stmt = stmt.where(Recipe.title.ilike(f"%{name__like}%"))
+    
+    # Apply ingredient filter
+    if ingredient_id:
+        ingredient_ids = [int(id.strip()) for id in ingredient_id.split(',') if id.strip()]
+        if ingredient_ids:
+            # Filter recipes that contain at least one of the specified ingredients
+            stmt = stmt.join(Recipe.recipe_ingredients).where(
+                RecipeIngredient.ingredient_id.in_(ingredient_ids)
+            ).distinct()
+    
+    # Apply sorting
+    if sort:
+        if sort.startswith('-'):
+            # Descending order
+            field = sort[1:]
+            if field == 'id':
+                stmt = stmt.order_by(Recipe.id.desc())
+            elif field == 'difficulty':
+                stmt = stmt.order_by(Recipe.difficulty.desc())
+        else:
+            # Ascending order
+            if sort == 'id':
+                stmt = stmt.order_by(Recipe.id.asc())
+            elif sort == 'difficulty':
+                stmt = stmt.order_by(Recipe.difficulty.asc())
+    
+    # Use pagination
+    page = await apaginate(session, stmt)
+    
+    # Transform the page items to use format_recipe_response
+    formatted_items = [format_recipe_response(recipe) for recipe in page.items]
+    
+    # Return a new Page with formatted items
+    return Page(
+        items=formatted_items,
+        total=page.total,
+        page=page.page,
+        size=page.size,
+        pages=page.pages
+    )
 
 
 @router.post("", response_model=RecipesRead, status_code=status.HTTP_201_CREATED, summary="делаем один рецепт")
