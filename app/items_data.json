@@ -1,0 +1,23 @@
+[
+    {
+        "id": 1,
+        "name": "first",
+        "description": "opisanie",
+        "price": 10,
+        "tax": 10
+    },
+    {
+        "id": 2,
+        "name": "two",
+        "description": "string",
+        "price": 2320,
+        "tax": 0
+    },
+    {
+        "id": 3,
+        "name": "two",
+        "description": "string",
+        "price": 0,
+        "tax": 0
+    }
+]
