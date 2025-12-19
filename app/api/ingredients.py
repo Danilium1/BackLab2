@@ -1,10 +1,14 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, status, HTTPException
-from models import db_helper, Ingredient
+from models import db_helper, Ingredient, Recipe, RecipeIngredient, RecipeAllergen
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from config import settings
+
+# Import the format function from recipes to avoid duplication
+from .recipes import format_recipe_response, RecipesRead
 
 router = APIRouter(
     tags=["ingredients"],
@@ -134,3 +138,46 @@ async def delete_ingredient(
     
     await session.delete(ingredient)
     await session.commit()
+
+
+# GET /ingredients/{id}/recipes - получить все рецепты с данным ингредиентом
+@router.get("/{id}/recipes", response_model=list[RecipesRead], summary="Получить все рецепты с данным ингредиентом")
+async def get_recipes_by_ingredient(
+    session: Annotated[
+        AsyncSession,
+        Depends(db_helper.session_getter),
+    ],
+    id: int,
+):
+    # Проверяем существование ингредиента
+    ingredient = await session.get(Ingredient, id)
+    if not ingredient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ingredient with id {id} not found"
+        )
+    
+    # Получаем все recipe_id, где используется этот ингредиент
+    stmt = select(RecipeIngredient.recipe_id).where(RecipeIngredient.ingredient_id == id)
+    result = await session.execute(stmt)
+    recipe_ids = result.scalars().all()
+    
+    if not recipe_ids:
+        return []
+    
+    # Загружаем рецепты со всеми связями
+    stmt = (
+        select(Recipe)
+        .where(Recipe.id.in_(recipe_ids))
+        .options(
+            selectinload(Recipe.cuisine),
+            selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
+        )
+        .order_by(Recipe.id)
+    )
+    result = await session.execute(stmt)
+    recipes = result.scalars().all()
+    
+    # Используем общую функцию форматирования из recipes.py
+    return [format_recipe_response(recipe) for recipe in recipes]
