@@ -7,6 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from config import settings
 
+# Import the format function from recipes to avoid duplication
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+from recipes import format_recipe_response
+
 router = APIRouter(
     tags=["ingredients"],
     prefix=settings.url.ingredients,
@@ -137,46 +143,8 @@ async def delete_ingredient(
     await session.commit()
 
 
-# Схемы для рецептов
-class CuisineInfo(BaseModel):
-    id: int
-    name: str
-    
-    class Config:
-        from_attributes = True
-
-class AllergenInfo(BaseModel):
-    id: int
-    name: str
-    
-    class Config:
-        from_attributes = True
-
-class IngredientInRecipe(BaseModel):
-    id: int
-    name: str
-    quantity: int
-    measurement: int
-    
-    class Config:
-        from_attributes = True
-
-class RecipeWithDetails(BaseModel):
-    id: int
-    title: str
-    description: str
-    cooking_time: int
-    difficulty: int
-    cuisine: CuisineInfo | None
-    allergens: list[AllergenInfo]
-    ingredients: list[IngredientInRecipe]
-    
-    class Config:
-        from_attributes = True
-
-
 # GET /ingredients/{id}/recipes - получить все рецепты с данным ингредиентом
-@router.get("/{id}/recipes", response_model=list[RecipeWithDetails], summary="Получить все рецепты с данным ингредиентом")
+@router.get("/{id}/recipes", summary="Получить все рецепты с данным ингредиентом")
 async def get_recipes_by_ingredient(
     session: Annotated[
         AsyncSession,
@@ -214,33 +182,5 @@ async def get_recipes_by_ingredient(
     result = await session.execute(stmt)
     recipes = result.scalars().all()
     
-    # Форматируем ответ
-    formatted_recipes = []
-    for recipe in recipes:
-        formatted_recipe = {
-            "id": recipe.id,
-            "title": recipe.title,
-            "description": recipe.description,
-            "cooking_time": recipe.cooking_time,
-            "difficulty": recipe.difficulty,
-            "cuisine": {
-                "id": recipe.cuisine.id,
-                "name": recipe.cuisine.name
-            } if recipe.cuisine else None,
-            "allergens": [
-                {"id": ra.allergen.id, "name": ra.allergen.name}
-                for ra in recipe.recipe_allergens
-            ],
-            "ingredients": [
-                {
-                    "id": ri.ingredient.id,
-                    "name": ri.ingredient.name,
-                    "quantity": ri.quantity,
-                    "measurement": ri.measurement
-                }
-                for ri in recipe.recipe_ingredients
-            ]
-        }
-        formatted_recipes.append(formatted_recipe)
-    
-    return formatted_recipes
+    # Используем общую функцию форматирования из recipes.py
+    return [format_recipe_response(recipe) for recipe in recipes]
