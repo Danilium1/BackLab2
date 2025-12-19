@@ -93,7 +93,7 @@ def format_recipe_response(recipe: Recipe) -> dict:
         ]
     }
 
-@router.get("", summary="читаем все рецепты")
+@router.get("", response_model=list[RecipesRead], summary="читаем все рецепты")
 async def index(
     session: Annotated[
         AsyncSession,
@@ -116,7 +116,7 @@ async def index(
     return [format_recipe_response(recipe) for recipe in recipes]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, summary="делаем один рецептик")
+@router.post("", response_model=RecipesRead, status_code=status.HTTP_201_CREATED, summary="делаем один рецептик")
 async def store(
     session: Annotated[
         AsyncSession,
@@ -209,7 +209,7 @@ async def store(
     return format_recipe_response(recipe_with_relations)
 
 
-@router.get("/{id}", summary="читаем один рецепт")
+@router.get("/{id}", response_model=RecipesRead, summary="читаем один рецепт")
 async def show(
     session: Annotated[
         AsyncSession,

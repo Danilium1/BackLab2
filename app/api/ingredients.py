@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from config import settings
 
 # Import the format function from recipes to avoid duplication
-from .recipes import format_recipe_response
+from .recipes import format_recipe_response, RecipesRead
 
 router = APIRouter(
     tags=["ingredients"],
@@ -141,7 +141,7 @@ async def delete_ingredient(
 
 
 # GET /ingredients/{id}/recipes - получить все рецепты с данным ингредиентом
-@router.get("/{id}/recipes", summary="Получить все рецепты с данным ингредиентом")
+@router.get("/{id}/recipes", response_model=list[RecipesRead], summary="Получить все рецепты с данным ингредиентом")
 async def get_recipes_by_ingredient(
     session: Annotated[
         AsyncSession,
