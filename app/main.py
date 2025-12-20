@@ -9,6 +9,7 @@ from models import db_helper, Base
 from api import router as api_router
 
 from fastapi.staticfiles import StaticFiles
+from fastapi_pagination import add_pagination
 
 
 
@@ -32,6 +33,9 @@ main_app.include_router(
     api_router,
 )
 main_app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Add pagination support
+add_pagination(main_app)
 
 # @main_app.post("/items/{item_id}") ##примерчик 1
 # async def read_item(item_id: int, q: str | None = None):
