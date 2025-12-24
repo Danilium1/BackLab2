@@ -1,6 +1,6 @@
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, Query
-from models import db_helper, Recipe, Cuisine, Allergen, Ingredient, RecipeAllergen, RecipeIngredient, MeasurementEnum
+from models import db_helper, Recipe, Cuisine, Allergen, Ingredient, RecipeAllergen, RecipeIngredient, MeasurementEnum, User
 from pydantic import BaseModel, Field
 from config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from fastapi_filter import FilterDepends, with_prefix
 from fastapi_filter.contrib.sqlalchemy import Filter
 from fastapi_pagination import Page, add_pagination, Params
 from fastapi_pagination.ext.sqlalchemy import paginate as apaginate
+from authentication.fastapi_users import current_active_user
 
 router = APIRouter(
     tags=["recipes"],
@@ -51,6 +52,14 @@ class CuisineInfo(BaseModel):
     class Config:
         from_attributes = True
 
+class AuthorInfo(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    
+    class Config:
+        from_attributes = True
+
 class AllergenInfo(BaseModel):
     id: int
     name: str
@@ -74,6 +83,7 @@ class RecipesRead(BaseModel):
     cooking_time: int
     difficulty: int
     cuisine: CuisineInfo | None
+    author: AuthorInfo
     allergens: list[AllergenInfo]
     ingredients: list[IngredientInfo]
     
@@ -93,6 +103,11 @@ def format_recipe_response(recipe: Recipe) -> dict:
             "id": recipe.cuisine.id,
             "name": recipe.cuisine.name
         } if recipe.cuisine else None,
+        "author": {
+            "id": recipe.author.id,
+            "first_name": recipe.author.first_name,
+            "last_name": recipe.author.last_name
+        },
         "allergens": [
             {"id": ra.allergen.id, "name": ra.allergen.name}
             for ra in recipe.recipe_allergens
@@ -124,6 +139,7 @@ async def index(
         select(Recipe)
         .options(
             selectinload(Recipe.cuisine),
+            selectinload(Recipe.author),
             selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
             selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
         )
@@ -181,6 +197,7 @@ async def store(
         Depends(db_helper.session_getter),
     ],
     recipe_create: RecipesCreate,
+    user: User = Depends(current_active_user),
 ):
     # 1. Проверяем существование кухни 
     if recipe_create.cuisine_id:
@@ -225,7 +242,8 @@ async def store(
         description=recipe_create.description,
         cooking_time=recipe_create.cooking_time,
         difficulty=recipe_create.difficulty,
-        cuisine_id=recipe_create.cuisine_id
+        cuisine_id=recipe_create.cuisine_id,
+        author_id=user.id
     )
     session.add(recipe)
     await session.flush()  # Получаем ID рецепта
@@ -257,6 +275,7 @@ async def store(
         .where(Recipe.id == recipe.id)
         .options(
             selectinload(Recipe.cuisine),
+            selectinload(Recipe.author),
             selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
             selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
         )
@@ -280,6 +299,7 @@ async def show(
         .where(Recipe.id == id)
         .options(
             selectinload(Recipe.cuisine),
+            selectinload(Recipe.author),
             selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
             selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
         )
@@ -303,6 +323,7 @@ async def update(
     ],
     id: int,
     recipe_update: RecipesCreate,
+    user: User = Depends(current_active_user),
 ):
     # 1. Проверяем существование рецепта
     recipe = await session.get(Recipe, id)
@@ -312,7 +333,14 @@ async def update(
             detail=f"Recipe with id {id} not found"
         )
     
-    # 2. Проверяем существование кухни (если указана)
+    # 2. Проверяем, что пользователь - автор рецепта
+    if recipe.author_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only update your own recipes"
+        )
+    
+    # 3. Проверяем существование кухни (если указана)
     if recipe_update.cuisine_id:
         cuisine = await session.get(Cuisine, recipe_update.cuisine_id)
         if not cuisine:
@@ -321,7 +349,7 @@ async def update(
                 detail=f"Cuisine with id {recipe_update.cuisine_id} not found"
             )
 
-    # 3. Проверяем существование аллергенов
+    # 4. Проверяем существование аллергенов
     if recipe_update.allergen_ids:
         stmt = select(Allergen).where(Allergen.id.in_(recipe_update.allergen_ids))
         allergens = await session.scalars(stmt)
@@ -335,7 +363,7 @@ async def update(
                 detail=f"Allergens with ids {missing_ids} not found"
             )
 
-    # 4. Проверяем существование ингредиентов
+    # 5. Проверяем существование ингредиентов
     ingredient_ids = [ing.ingredient_id for ing in recipe_update.ingredients]
     stmt = select(Ingredient).where(Ingredient.id.in_(ingredient_ids))
     ingredients = await session.scalars(stmt)
@@ -349,21 +377,21 @@ async def update(
             detail=f"Ingredients with ids {missing_ing_ids} not found"
         )
     
-    # 5. Обновляем основные поля рецепта
+    # 6. Обновляем основные поля рецепта
     recipe.title = recipe_update.title
     recipe.description = recipe_update.description
     recipe.cooking_time = recipe_update.cooking_time
     recipe.difficulty = recipe_update.difficulty
     recipe.cuisine_id = recipe_update.cuisine_id
     
-    # 6. Удаляем старые связи с аллергенами
+    # 7. Удаляем старые связи с аллергенами
     stmt = select(RecipeAllergen).where(RecipeAllergen.recipe_id == id)
     result = await session.execute(stmt)
     old_recipe_allergens = result.scalars().all()
     for ra in old_recipe_allergens:
         await session.delete(ra)
     
-    # 7. Добавляем новые связи с аллергенами
+    # 8. Добавляем новые связи с аллергенами
     for allergen_id in recipe_update.allergen_ids:
         recipe_allergen = RecipeAllergen(
             recipe_id=recipe.id,
@@ -371,14 +399,14 @@ async def update(
         )
         session.add(recipe_allergen)
     
-    # 8. Удаляем старые ингредиенты
+    # 9. Удаляем старые ингредиенты
     stmt = select(RecipeIngredient).where(RecipeIngredient.recipe_id == id)
     result = await session.execute(stmt)
     old_recipe_ingredients = result.scalars().all()
     for ri in old_recipe_ingredients:
         await session.delete(ri)
     
-    # 9. Добавляем новые ингредиенты
+    # 10. Добавляем новые ингредиенты
     for ingredient_data in recipe_update.ingredients:
         recipe_ingredient = RecipeIngredient(
             recipe_id=recipe.id,
@@ -388,15 +416,16 @@ async def update(
         )
         session.add(recipe_ingredient)
     
-    # 10. Сохраняем изменения
+    # 11. Сохраняем изменения
     await session.commit()
     
-    # 11. Загружаем обновленный рецепт со всеми связями
+    # 12. Загружаем обновленный рецепт со всеми связями
     stmt = (
         select(Recipe)
         .where(Recipe.id == id)
         .options(
             selectinload(Recipe.cuisine),
+            selectinload(Recipe.author),
             selectinload(Recipe.recipe_allergens).selectinload(RecipeAllergen.allergen),
             selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
         )
@@ -414,6 +443,7 @@ async def destroy(
         Depends(db_helper.session_getter),
     ],
     id: int,
+    user: User = Depends(current_active_user),
 ):
     # 1. Проверяем существование рецепта
     recipe = await session.get(Recipe, id)
@@ -423,24 +453,31 @@ async def destroy(
             detail=f"Recipe with id {id} not found"
         )
     
-    # 2. Удаляем связи с аллергенами
+    # 2. Проверяем, что пользователь - автор рецепта
+    if recipe.author_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own recipes"
+        )
+    
+    # 3. Удаляем связи с аллергенами
     stmt = select(RecipeAllergen).where(RecipeAllergen.recipe_id == id)
     result = await session.execute(stmt)
     recipe_allergens = result.scalars().all()
     for ra in recipe_allergens:
         await session.delete(ra)
     
-    # 3. Удаляем связи с ингредиентами
+    # 4. Удаляем связи с ингредиентами
     stmt = select(RecipeIngredient).where(RecipeIngredient.recipe_id == id)
     result = await session.execute(stmt)
     recipe_ingredients = result.scalars().all()
     for ri in recipe_ingredients:
         await session.delete(ri)
     
-    # 4. Удаляем сам рецепт
+    # 5. Удаляем сам рецепт
     await session.delete(recipe)
     
-    # 5. Сохраняем изменения
+    # 6. Сохраняем изменения
     await session.commit()
 
 
