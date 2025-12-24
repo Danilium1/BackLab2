@@ -28,8 +28,8 @@ class AuthConfig(BaseModel):
 
 class AccessToken(BaseModel):
     lifetime_seconds: int = 3600
-    reset_password_token_secret: str = "65d30fd9fe2b8592d95817b005c0e0184d5b952e33a09bae47d33cfc9052e371"
-    verification_token_secret: str = "79afe877e9a5291f626b9f16266d06e77566bd5f1a7ddbf3b8729969e879b080"
+    reset_password_token_secret: str
+    verification_token_secret: str
 
 
 class UrlPrefix(BaseModel):
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     url: UrlPrefix = UrlPrefix()
     auth: AuthConfig = AuthConfig()
     db: DatabaseConfig
-    access_token: AccessToken = AccessToken()
+    access_token: AccessToken
 
 
 settings = Settings()
