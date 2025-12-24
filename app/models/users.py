@@ -9,6 +9,8 @@ if TYPE_CHECKING:
 
 
 class User(SQLAlchemyBaseUserTable[int], Base):
+    __tablename__ = "users"
+    
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     last_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
