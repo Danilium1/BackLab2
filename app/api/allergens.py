@@ -39,7 +39,7 @@ async def create_allergen(
     if existing_allergen:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Allergen with name '{allergen_data.name}' already exists"
+            detail=f"Аллерген с названием '{allergen_data.name}' уже существует"
         )
     
     # Создаем новый аллерген
@@ -74,7 +74,7 @@ async def get_allergen(
     if not allergen:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Allergen with id {id} not found"
+            detail=f"Аллерген с id {id} не найден"
         )
     return allergen
 
@@ -93,7 +93,7 @@ async def update_allergen(
     if not allergen:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Allergen with id {id} not found"
+            detail=f"Аллерген с id {id} не найден"
         )
     
     # Проверяем уникальность нового названия
@@ -105,7 +105,7 @@ async def update_allergen(
     if existing_allergen:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Allergen with name '{allergen_update.name}' already exists"
+            detail=f"Аллерген с названием '{allergen_update.name}' уже существует"
         )
     
     # Обновляем аллерген
@@ -127,7 +127,7 @@ async def delete_allergen(
     if not allergen:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Allergen with id {id} not found"
+            detail=f"Аллерген с id {id} не найден"
         )
     
     await session.delete(allergen)

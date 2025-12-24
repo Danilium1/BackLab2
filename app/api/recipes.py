@@ -205,7 +205,7 @@ async def store(
         if not cuisine:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Cuisine with id {recipe_create.cuisine_id} not found"
+                detail=f"Кухня с id {recipe_create.cuisine_id} не найдена"
             )
 
     # 2. Проверяем существование аллергенов
@@ -219,7 +219,7 @@ async def store(
             missing_ids = set(recipe_create.allergen_ids) - existing_ids
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Allergens with ids {missing_ids} not found"
+                detail=f"Аллергены с id {missing_ids} не найдены"
             )
 
     # 3. Проверяем существование ингредиентов
@@ -233,7 +233,7 @@ async def store(
         missing_ing_ids = set(ingredient_ids) - existing_ing_ids
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Ingredients with ids {missing_ing_ids} not found"
+            detail=f"Ингредиенты с id {missing_ing_ids} не найдены"
         )
 
     # 4. Создаем рецепт
@@ -310,7 +310,7 @@ async def show(
     if not recipe:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipe with id {id} not found"
+            detail=f"Рецепт с id {id} не найден"
         )
     
     return format_recipe_response(recipe)
@@ -330,14 +330,14 @@ async def update(
     if not recipe:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipe with id {id} not found"
+            detail=f"Рецепт с id {id} не найден"
         )
     
     # 2. Проверяем, что пользователь - автор рецепта
     if recipe.author_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only update your own recipes"
+            detail="Вы можете редактировать только свои рецепты"
         )
     
     # 3. Проверяем существование кухни (если указана)
@@ -346,7 +346,7 @@ async def update(
         if not cuisine:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Cuisine with id {recipe_update.cuisine_id} not found"
+                detail=f"Кухня с id {recipe_update.cuisine_id} не найдена"
             )
 
     # 4. Проверяем существование аллергенов
@@ -360,7 +360,7 @@ async def update(
             missing_ids = set(recipe_update.allergen_ids) - existing_ids
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Allergens with ids {missing_ids} not found"
+                detail=f"Аллергены с id {missing_ids} не найдены"
             )
 
     # 5. Проверяем существование ингредиентов
@@ -374,7 +374,7 @@ async def update(
         missing_ing_ids = set(ingredient_ids) - existing_ing_ids
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Ingredients with ids {missing_ing_ids} not found"
+            detail=f"Ингредиенты с id {missing_ing_ids} не найдены"
         )
     
     # 6. Обновляем основные поля рецепта
@@ -450,14 +450,14 @@ async def destroy(
     if not recipe:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipe with id {id} not found"
+            detail=f"Рецепт с id {id} не найден"
         )
     
     # 2. Проверяем, что пользователь - автор рецепта
     if recipe.author_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only delete your own recipes"
+            detail="Вы можете удалять только свои рецепты"
         )
     
     # 3. Удаляем связи с аллергенами

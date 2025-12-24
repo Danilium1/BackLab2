@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from config import settings
 
-# Import the format function from recipes to avoid duplication
+# Импортирует функцию форматирования из рецептов, чтобы избежать дублирования
 from .recipes import format_recipe_response, RecipesRead
 
 router = APIRouter(
@@ -156,7 +156,7 @@ async def get_recipes_by_ingredient(
     if not ingredient:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Ingredient with id {id} not found"
+            detail=f"Ингредиент с id {id} не найден"
         )
     
     # Получаем все recipe_id, где используется этот ингредиент
@@ -200,19 +200,19 @@ async def get_recipes_by_ingredient(
         if invalid_fields:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid fields in select: {', '.join(invalid_fields)}"
+                detail=f"Неверные поля в select: {', '.join(invalid_fields)}"
             )
     
-    # Format response based on include and select parameters
+    # Форматирует ответ на основе параметров include и select
     formatted_recipes = []
     for recipe in recipes:
-        # Build response dict based on what was requested
+        # Строит словарь ответа на основе запроса
         if selected_fields:
-            # Only include selected fields from the Recipe entity
+            # Включает только выбранные поля из сущности Recipe
             recipe_dict = {}
             if 'id' in selected_fields:
                 recipe_dict['id'] = recipe.id
-            # Note: 'name' should map to 'title' in the Recipe model
+            # (в модели Recipe значение 'name' должно соответствовать значению 'title')
             if 'name' in selected_fields:
                 recipe_dict['name'] = recipe.title
             if 'difficulty' in selected_fields:
@@ -223,16 +223,16 @@ async def get_recipes_by_ingredient(
                 recipe_dict['cooking_time'] = recipe.cooking_time
             formatted_recipes.append(recipe_dict)
         else:
-            # Return all basic fields plus any included relations
+            # Возвращает все основные поля, а также все включенные в них связи.
             recipe_dict = {
                 'id': recipe.id,
-                'name': recipe.title,  # Map title to name as per spec
+                'name': recipe.title,  # (в модели Recipe значение 'name' должно соответствовать значению 'title')
                 'difficulty': recipe.difficulty,
                 'description': recipe.description,
                 'cooking_time': recipe.cooking_time
             }
             
-            # Add included relations
+            # Добавляет включенные связи
             if 'cuisine' in includes:
                 recipe_dict['cuisine'] = {
                     'id': recipe.cuisine.id,
