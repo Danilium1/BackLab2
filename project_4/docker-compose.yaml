@@ -1,0 +1,21 @@
+services:
+  pg:
+    image: postgres
+    environment:
+      POSTGRES_DB: db_fastapi
+      POSTGRES_USER: user_fastapi
+      POSTGRES_PASSWORD: password_fastapi
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - "db_fastapi:/var/lib/postgresql/data"
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_fastapi:
+    driver: local

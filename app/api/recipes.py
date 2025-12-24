@@ -17,11 +17,11 @@ router = APIRouter(
     prefix=settings.url.recipes,
 )
 
-# Filter class for Recipe
+# Фильтр для рецептов
 class RecipeFilter(Filter):
     name__like: Optional[str] = None
-    ingredient_id: Optional[str] = None  # Comma-separated list of ingredient IDs
-    order_by: list[str] = ["-id"]  # Default sorting by id descending
+    ingredient_id: Optional[str] = None  
+    order_by: list[str] = ["-id"]  
 
     class Constants(Filter.Constants):
         model = Recipe
@@ -115,11 +115,11 @@ async def index(
         Depends(db_helper.session_getter),
     ],
     params: Params = Depends(),
-    name__like: Optional[str] = Query(None, description="Search recipes by name (partial match)"),
-    ingredient_id: Optional[str] = Query(None, description="Filter by ingredient IDs (comma-separated)"),
-    sort: str = Query("-id", description="Sort by field (e.g., 'id', '-id', 'difficulty', '-difficulty')"),
+    name__like: Optional[str] = Query(None, description="Искать по имени (partial match)"),
+    ingredient_id: Optional[str] = Query(None, description="Фильтровать по ID ингредиентов (через запятую)"),
+    sort: str = Query("-id", description="Сортировать по полю (например, 'id', '-id', 'difficulty', '-difficulty')"),
 ):
-    # Build base query with eager loading of relationships
+    # базовый запрос, тут подгружаются связные данные
     stmt = (
         select(Recipe)
         .options(
@@ -129,11 +129,11 @@ async def index(
         )
     )
     
-    # Apply name filter (case-insensitive partial match)
+    # Применить фильтр по имени
     if name__like:
         stmt = stmt.where(Recipe.title.ilike(f"%{name__like}%"))
     
-    # Apply ingredient filter
+    # филтр ингридиентов 
     if ingredient_id:
         ingredient_ids = [int(id.strip()) for id in ingredient_id.split(',') if id.strip()]
         if ingredient_ids:
@@ -142,29 +142,29 @@ async def index(
                 RecipeIngredient.ingredient_id.in_(ingredient_ids)
             ).distinct()
     
-    # Apply sorting
+    # сортировка
     if sort:
         if sort.startswith('-'):
-            # Descending order
+            # по убыванию
             field = sort[1:]
             if field == 'id':
                 stmt = stmt.order_by(Recipe.id.desc())
             elif field == 'difficulty':
                 stmt = stmt.order_by(Recipe.difficulty.desc())
         else:
-            # Ascending order
+            # возрастание 
             if sort == 'id':
                 stmt = stmt.order_by(Recipe.id.asc())
             elif sort == 'difficulty':
                 stmt = stmt.order_by(Recipe.difficulty.asc())
     
-    # Use pagination
+    # пагирнация 
     page = await apaginate(session, stmt, params=params)
     
-    # Transform the page items to use format_recipe_response
+    # Преобразовать элементы страницы с использованием format_recipe_response
     formatted_items = [format_recipe_response(recipe) for recipe in page.items]
     
-    # Return a dict with pagination info
+    # Вернуть словарь с информацией о пагинации
     return {
         'items': formatted_items,
         'total': page.total,
@@ -182,7 +182,7 @@ async def store(
     ],
     recipe_create: RecipesCreate,
 ):
-    # 1. Проверяем существование кухни (если указана)
+    # 1. Проверяем существование кухни 
     if recipe_create.cuisine_id:
         cuisine = await session.get(Cuisine, recipe_create.cuisine_id)
         if not cuisine:
@@ -444,37 +444,4 @@ async def destroy(
     await session.commit()
 
 
-# @router.put("/{id}", response_model=RecipesRead, summary="обновить один рецепт")
-# async def update(
-#     session: Annotated[
-#         AsyncSession,
-#         Depends(db_helper.session_getter),
-#     ],
-#     id: int,
-#     recipe_update: RecipesCreate,
-# ):
-#     recipe = await session.get(Recipe, id)
-#     recipe.title = recipe_update.title
-#     recipe.description = recipe_update.description
-#     recipe.cooking_time = recipe_update.cooking_time
-#     recipe.difficulty = recipe_update.difficulty
-#     await session.commit()
-#     return recipe
 
-
-# @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, summary="удаление рецепта")
-# async def destroy(
-#     session: Annotated[
-#         AsyncSession,
-#         Depends(db_helper.session_getter),
-#     ],
-#     id: int,
-# ):
-#     recipe = await session.get(Recipe, id)
-#     if not recipe:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND, detail=f"Recipe with id {id} not found"
-#         )
-
-#     await session.delete(recipe)
-#     await session.commit()
