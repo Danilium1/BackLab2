@@ -9,6 +9,8 @@ __all__ = (
     "RecipeAllergen", 
     "RecipeIngredient",
     "MeasurementEnum",
+    "User",
+    "AccessToken",
 )
 
 from .db_helper import db_helper
@@ -21,3 +23,5 @@ from .ingredient import Ingredient
 from .recipe_allergen import RecipeAllergen
 from .recipe_ingredient import RecipeIngredient
 from .enums import MeasurementEnum
+from .users import User
+from .access_token import AccessToken
